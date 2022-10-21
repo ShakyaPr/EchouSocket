@@ -47,6 +47,7 @@ int main() {
                 /* Open event here, you may access ws->getUserData() which points to a PerSocketData struct */
             },
             .message = [](auto *ws, std::string_view message, uWS::OpCode opCode) {
+                // Returns the message by adding [ECHO] text to the message
                 std::string echo = "[ECHO] ";
                 std::string m = static_cast<std::string>(message);
                 m = echo + m;
