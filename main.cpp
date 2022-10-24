@@ -13,7 +13,11 @@ struct PerSocketData {};
 uWS::WebSocket<false, true, PerSocketData> *gws=nullptr;
 
 void producerThread(std::string_view msg) {
-    std::unique_lock<std::mutex> ul(mutx);
+    /*
+    Adding "[ECHO] " text to the every incoming message
+    */
+
+    std::unique_lock<std::mutex> ul(mutx);                        //mutex unique lock to lock the thread
     std::string echo = "[ECHO] ";
     std::string m = static_cast<std::string>(msg);
     std::cout << "Incoming message: " << m <<std::endl;
@@ -26,9 +30,9 @@ void producerThread(std::string_view msg) {
 
 void consumerThread(uWS::OpCode opCode) {
     std::unique_lock<std::mutex> ul(mutx);
-    cv.wait(ul,[]{ return lExit; });
+    cv.wait(ul,[]{ return lExit; });                 //wait until producer produces a message
     std::cout << "Outgoing message: " << outputMsg << std::endl;
-    gws->send(outputMsg,opCode,true);
+    gws->send(outputMsg,opCode,true);          //send the response through socket
     lExit = false;
     cv.notify_one();
 }
