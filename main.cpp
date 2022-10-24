@@ -1,38 +1,41 @@
-//#include "App.h"
-//
-///* Note that uWS::SSLApp({options}) is the same as uWS::App() when compiled without SSL support */
-//
-//int main() {
-//    /* Overly simple hello world app */
-//    uWS::App().get("/*", [](auto *res, auto */*req*/) {
-//        res->end("Hello world!");
-//    }).listen(3000, [](auto *listen_socket) {
-//        if (listen_socket) {
-//            std::cout << "Listening on port " << 3000 << std::endl;
-//        }
-//    }).run();
-//
-//    std::cout << "Failed to listen on port 3000" << std::endl;
-//}
-
-//
-// Created by shakya on 10/20/22.
-//
-/* We simply call the root header file "App.h", giving you uWS::App and uWS::SSLApp */
 #include "App.h"
+#include <mutex>
+#include <thread>
+#include <condition_variable>
 
-/* This is a simple WebSocket echo server example.
- * You may compile it with "WITH_OPENSSL=1 make" or with "make" */
+std::mutex mutx;
+std::condition_variable cv;
+std::string_view outputMsg;
+bool lExit = false;
+
+uWS::App app ;
+struct PerSocketData {};
+uWS::WebSocket<false, true, PerSocketData> *gws=nullptr;
+
+void producerThread(std::string_view msg) {
+    std::unique_lock<std::mutex> ul(mutx);
+    std::string echo = "[ECHO] ";
+    std::string m = static_cast<std::string>(msg);
+    std::cout << "Incoming message: " << m <<std::endl;
+    m = echo + m;
+    outputMsg = m;
+    lExit = true;
+    cv.notify_one();
+    cv.wait(ul, [] {return lExit == false; });
+}
+
+void consumerThread(uWS::OpCode opCode) {
+    std::unique_lock<std::mutex> ul(mutx);
+    cv.wait(ul,[]{ return lExit; });
+    std::cout << "Outgoing message: " << outputMsg << std::endl;
+    gws->send(outputMsg,opCode,true);
+    lExit = false;
+    cv.notify_one();
+}
 
 int main() {
-    /* ws->getUserData returns one of these */
-    struct PerSocketData {
-        /* Fill with user data */
-    };
 
-    /* Keep in mind that uWS::SSLApp({options}) is the same as uWS::App() when compiled without SSL support.
-     * You may swap to using uWS:App() if you don't need SSL */
-    uWS::App().ws<PerSocketData>("/*", {
+    app.ws<PerSocketData>("/*", {
             /* Settings */
             .compression = uWS::CompressOptions(uWS::DEDICATED_COMPRESSOR_4KB | uWS::DEDICATED_DECOMPRESSOR),
             .maxPayloadLength = 100 * 1024 * 1024,
@@ -43,28 +46,21 @@ int main() {
             .sendPingsAutomatically = true,
             /* Handlers */
             .upgrade = nullptr,
-            .open = [](auto */*ws*/) {
-                /* Open event here, you may access ws->getUserData() which points to a PerSocketData struct */
+            .open = [](auto *ws) {
+                gws = ws;
             },
             .message = [](auto *ws, std::string_view message, uWS::OpCode opCode) {
-                // Returns the message by adding [ECHO] text to the message
-                std::string echo = "[ECHO] ";
-                std::string m = static_cast<std::string>(message);
-                m = echo + m;
-                std::string_view msg = m;
-                ws->send(msg, opCode, true);
-            },
-            .drain = [](auto */*ws*/) {
-                /* Check ws->getBufferedAmount() here */
-            },
-            .ping = [](auto */*ws*/, std::string_view) {
-                /* Not implemented yet */
-            },
-            .pong = [](auto */*ws*/, std::string_view) {
-                /* Not implemented yet */
+
+                // two threads for process the incoming message and send the response
+
+                std::thread t2(consumerThread,opCode);
+                std::thread t1(producerThread,message);
+                t1.join();
+                t2.join();
+
             },
             .close = [](auto */*ws*/, int /*code*/, std::string_view /*message*/) {
-                /* You may access ws->getUserData() here */
+
             }
     }).listen(9001, [](auto *listen_socket) {
         if (listen_socket) {
