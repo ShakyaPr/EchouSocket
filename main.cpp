@@ -4,49 +4,44 @@
 #include <condition_variable>
 #include <queue>
 
-std::mutex mutx;
-std::condition_variable cv;
-std::string_view outputMsg;
-bool lExit = false;
-
 uWS::App app ;
 struct PerSocketData {};
 uWS::WebSocket<false, true, PerSocketData> *gws=nullptr;
 
-std::queue<std::string_view> msgQueue;
+std::queue<std::string> msgQueue;
+
+std::string addEcho(std::string_view msg){
+    std::string echo = "[ECHO] ";
+    std::string m = static_cast<std::string>(msg);
+    m = echo + m;
+    std::string res = m;
+    m = " ";
+    return res;
+
+}
 
 void producerThread(std::string_view msg) {
-    /*
-    Adding "[ECHO] " text to the every incoming message
-    */
 
-//    std::unique_lock<std::mutex> ul(mutx);                        //mutex unique lock to lock the thread
-//    //std::string echo = "[ECHO] ";
-//    std::string m = static_cast<std::string>(msg);
-    if (mutx.try_lock()){
-        std::cout << "Incoming message: " << msg <<std::endl;
-        msgQueue.push(msg);
-        mutx.unlock();
-    }
+
+
+        std::cout << "Incoming message: " << msg << "\n" << std::endl;
+        std::string outMessage = addEcho(msg);
+        msgQueue.push(outMessage);
 
 
 }
 
 void consumerThread(uWS::OpCode opCode) {
-    //wait until producer produces a message
-    //std::unique_lock<std::mutex> ul(mutx);
-    //cv.wait(ul,[]{ return lExit; });
-    if (mutx.try_lock()){
+
+
         while (!msgQueue.empty()){
-            std::cout << "Outgoing message: " << msgQueue.front() << " Size: " << msgQueue.size() <<std::endl;
-            gws->send(msgQueue.front(),opCode,true);          //send the response through socket
+
+            std::cout << "Outgoing message: " << msgQueue.front() << msgQueue.size() << "\n" <<std::endl;
+            std::string_view res = msgQueue.front();
+            gws->send(res,opCode,true);          //send the response through socket
             msgQueue.pop();
         }
-        mutx.unlock();
-    }
 
-//    lExit = false;
-//    cv.notify_one();
 
 
 }
@@ -71,11 +66,11 @@ int main() {
 
                 // two threads for process the incoming message and send the response
                 std::thread t1(producerThread,message);
-                msgQueue.push(message);
                 std::thread t2(consumerThread,opCode);
                 t1.join();
                 t2.join();
-//                producerThread(message);
+//                  msgQueue.push(message);
+
 
 
             },
