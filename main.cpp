@@ -38,7 +38,7 @@ void consumerThread(uWS::OpCode opCode) {
     //cv.wait(ul,[]{ return lExit; });
     if (mutx.try_lock()){
         while (!msgQueue.empty()){
-            std::cout << "Outgoing message: " << msgQueue.front() << std::endl;
+            std::cout << "Outgoing message: " << msgQueue.front() << " Size: " << msgQueue.size() <<std::endl;
             gws->send(msgQueue.front(),opCode,true);          //send the response through socket
             msgQueue.pop();
         }
@@ -71,9 +71,12 @@ int main() {
 
                 // two threads for process the incoming message and send the response
                 std::thread t1(producerThread,message);
+                msgQueue.push(message);
                 std::thread t2(consumerThread,opCode);
                 t1.join();
                 t2.join();
+//                producerThread(message);
+
 
             },
             .close = [](auto */*ws*/, int /*code*/, std::string_view /*message*/) {
