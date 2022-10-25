@@ -21,11 +21,7 @@ void producerThread(std::string_view msg) {
     std::string echo = "[ECHO] ";
     std::string m = static_cast<std::string>(msg);
     std::cout << "Incoming message: " << m <<std::endl;
-    m = echo + m;
-    outputMsg = m;
-    lExit = true;
-    cv.notify_one();
-    cv.wait(ul, [] {return lExit == false; });
+
 }
 
 void consumerThread(uWS::OpCode opCode) {
