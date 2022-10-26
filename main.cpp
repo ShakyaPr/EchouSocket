@@ -2,6 +2,8 @@
 #include <mutex>
 #include <thread>
 #include <condition_variable>
+#include <pthread.h>
+#define THREAD_NUM 4
 
 std::mutex mutx;
 std::condition_variable cv;
@@ -11,33 +13,64 @@ bool lExit = false;
 uWS::App app ;
 struct PerSocketData {};
 uWS::WebSocket<false, true, PerSocketData> *gws=nullptr;
+//uWS::OpCode Op;
+
+pthread_mutex_t mutexQueue;
+pthread_cond_t condQueue;
+
+std::string_view taskQueue[1000];
+int taskCount = 0;
 
 void producerThread(std::string_view msg) {
-    /*
-    Adding "[ECHO] " text to the every incoming message
-    */
 
-    std::unique_lock<std::mutex> ul(mutx);                        //mutex unique lock to lock the thread
-    std::string echo = "[ECHO] ";
-    std::string m = static_cast<std::string>(msg);
-    std::cout << "Incoming message: " << m <<std::endl;
-    m = echo + m;
-    outputMsg = m;
-    lExit = true;
-    cv.notify_one();
-    cv.wait(ul, [] {return lExit == false; });
 }
 
 void consumerThread(uWS::OpCode opCode) {
-    std::unique_lock<std::mutex> ul(mutx);
-    cv.wait(ul,[]{ return lExit; });                 //wait until producer produces a message
-    std::cout << "Outgoing message: " << outputMsg << std::endl;
-    gws->send(outputMsg,opCode,true);          //send the response through socket
-    lExit = false;
-    cv.notify_one();
+
+}
+
+void executeTask(std::string_view msg){
+    gws->send(msg,OpCode,true);
+    std::cout << "Outgoing message: " << msg << std::endl;
+}
+
+void* startThread(void* args){
+    while (1){
+        std::string_view message;
+
+        pthread_mutex_lock(&mutexQueue);
+        while (taskCount == 0){
+            pthread_cond_wait(&condQueue, &mutexQueue);
+        }
+
+        message = taskQueue[0];
+        for (int i=0; i<taskCount-1;i++){
+            taskQueue[i] = taskQueue[i+1];
+        }
+        taskCount--;
+        pthread_mutex_unlock(&mutexQueue);
+        executeTask(message);
+    }
+}
+
+void submitTask(std::string_view message){
+    pthread_mutex_lock(&mutexQueue);
+    taskQueue[taskCount] = message;
+    taskCount++;
+    pthread_mutex_unlock(&mutexQueue);
+    pthread_cond_signal(&condQueue);
 }
 
 int main() {
+    pthread_t th[THREAD_NUM];
+    pthread_mutex_init(&mutexQueue, NULL);
+    pthread_cond_init(&condQueue, NULL);
+
+    for (int i = 0; i < THREAD_NUM; i++) {
+        if (pthread_create(&th[i], NULL, &startThread, NULL) != 0) {
+            perror("Failed to create the thread");
+        }
+    }
 
     app.ws<PerSocketData>("/*", {
             /* Settings */
@@ -55,12 +88,7 @@ int main() {
             },
             .message = [](auto *ws, std::string_view message, uWS::OpCode opCode) {
 
-                // two threads for process the incoming message and send the response
-
-                std::thread t2(consumerThread,opCode);
-                std::thread t1(producerThread,message);
-                t1.join();
-                t2.join();
+                submitTask(message);
 
             },
             .close = [](auto */*ws*/, int /*code*/, std::string_view /*message*/) {
@@ -71,4 +99,5 @@ int main() {
             std::cout << "Listening on port " << 9001 << std::endl;
         }
     }).run();
+
 }
