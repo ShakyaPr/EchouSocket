@@ -5,11 +5,6 @@
 #include <pthread.h>
 #define THREAD_NUM 4
 
-std::mutex mutx;
-std::condition_variable cv;
-std::string_view outputMsg;
-bool lExit = false;
-
 uWS::App app ;
 struct PerSocketData {};
 uWS::WebSocket<false, true, PerSocketData> *gws=nullptr;
@@ -21,22 +16,16 @@ pthread_cond_t condQueue;
 std::string_view taskQueue[1000];
 int taskCount = 0;
 
-void producerThread(std::string_view msg) {
-
-}
-
-void consumerThread(uWS::OpCode opCode) {
-
-}
-
-void executeTask(std::string_view msg){
-    gws->send(msg,OpCode,true);
-    std::cout << "Outgoing message: " << msg << std::endl;
+void consumer(std::string_view msg){
+    usleep(1000000);
+    gws->send(msg,uWS::TEXT,true);
+    std::cout << "Outgoing message: " << msg << " Task count: " << taskCount << std::endl;
 }
 
 void* startThread(void* args){
     while (1){
         std::string_view message;
+        //std::cout << "thread started..." << std::endl;
 
         pthread_mutex_lock(&mutexQueue);
         while (taskCount == 0){
@@ -49,14 +38,15 @@ void* startThread(void* args){
         }
         taskCount--;
         pthread_mutex_unlock(&mutexQueue);
-        executeTask(message);
+        consumer(message);
     }
 }
 
-void submitTask(std::string_view message){
+void producer(std::string_view message){
     pthread_mutex_lock(&mutexQueue);
     taskQueue[taskCount] = message;
     taskCount++;
+ //   std::cout << "task count: " << taskCount << std::endl;
     pthread_mutex_unlock(&mutexQueue);
     pthread_cond_signal(&condQueue);
 }
@@ -88,7 +78,7 @@ int main() {
             },
             .message = [](auto *ws, std::string_view message, uWS::OpCode opCode) {
 
-                submitTask(message);
+                producer(message);
 
             },
             .close = [](auto */*ws*/, int /*code*/, std::string_view /*message*/) {
@@ -99,5 +89,14 @@ int main() {
             std::cout << "Listening on port " << 9001 << std::endl;
         }
     }).run();
+
+    for (int i = 0; i < THREAD_NUM; i++) {
+        if (pthread_join(th[i], NULL) != 0) {
+            perror("Failed to join the thread");
+        }
+    }
+    pthread_mutex_destroy(&mutexQueue);
+    pthread_cond_destroy(&condQueue);
+    return 0;
 
 }
